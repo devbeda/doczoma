@@ -58,7 +58,9 @@ const Login = () => {
         phoneNo: formattedPhone,
         password,
       });
-      // console.log(res);
+      console.log(res);
+      console.log("Access Token", res.data.accessToken);
+      
 
       if (res.status === 200) {
         await AsyncStorage.setItem("accessToken", res.data.accessToken);

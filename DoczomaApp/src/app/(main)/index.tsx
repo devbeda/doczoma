@@ -66,10 +66,15 @@ const Dashboard = () => {
         },
       });
 
+      console.log("userr", res);
+      
+
       const fetchedUser = res.data.user;
       setUser(fetchedUser);
       setRootFolders(fetchedUser.rootFolders || []);
       setRootFiles(fetchedUser.rootFiles || []);
+      console.log("fetched user", fetchedUser);
+      
 
       // If we're in a subfolder, update that folder's contents
       if (folderStack.length > 0) {

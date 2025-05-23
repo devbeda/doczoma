@@ -27,6 +27,8 @@ const NavBar = ({
   open: boolean;
   toggleOpen: () => void;
 }) => {
+  console.log("user:",user);
+  
   const expandAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
