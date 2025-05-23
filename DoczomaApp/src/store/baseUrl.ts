@@ -1,3 +1,3 @@
-const baseURL = 'http://doczoma.onrender.com/api/v1';
+const baseURL = 'https://doczoma.onrender.com/api/v1';
 
 export default baseURL;

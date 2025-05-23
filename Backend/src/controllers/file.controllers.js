@@ -69,7 +69,7 @@ export const createFolder = async (req, res) => {
 
 export const uploadFile = async (req, res) => {
   try {
-    const { name, isRoot, parentFolder, schedule } = req.body;
+    const { name, parentFolder, schedule } = req.body;
     const userId = req.user?._id;
 
     if (!name || !req.file) {
@@ -95,20 +95,21 @@ export const uploadFile = async (req, res) => {
     const fileNameInS3 = `${name}${extension}`;
     const fileUrl = await uploadToS3(req.file, fileNameInS3);
 
-    const isRootBool = isRoot === true || isRoot === "true";
+    // ✅ Automatically determine isRoot
+    const isRoot = !parentFolder;
 
     const newFile = await File.create({
       name: fileNameInS3,
-      isRoot: isRootBool,
+      isRoot,
       owner: userId,
-      parentfolder: isRootBool ? null : parentFolder || null,
+      parentfolder: isRoot ? null : parentFolder || null,
       size: fileSize,
       fileUrl: fileUrl,
       schedule: schedule ? new Date(schedule) : undefined,
       fileType: extension.replace(".", "").toLowerCase(),
     });
 
-    if (!isRootBool && parentFolder) {
+    if (!isRoot && parentFolder) {
       const folder = await Folder.findById(parentFolder);
       if (folder) {
         folder.childFiles.push(newFile._id);
@@ -117,7 +118,7 @@ export const uploadFile = async (req, res) => {
     }
 
     await User.findByIdAndUpdate(userId, {
-      $push: isRootBool ? { rootFiles: newFile._id } : {},
+      $push: isRoot ? { rootFiles: newFile._id } : {},
       $inc: { storageOccupide: fileSize },
     });
 
