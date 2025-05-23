@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema({
         type:mongoose.Schema.Types.ObjectId,
         ref: "Folder"
     }],
-    rootFiels:[{
+    rootFiles:[{
         type:mongoose.Schema.Types.ObjectId,
         ref:"File"
     }],

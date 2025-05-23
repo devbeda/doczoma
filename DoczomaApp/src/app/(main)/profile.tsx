@@ -18,6 +18,7 @@ import baseURL from "@/src/store/baseUrl";
 import { useSelector } from "react-redux";
 import { RootState } from "../../store/store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 
 
 // Reusable field component
@@ -139,10 +140,7 @@ const Profile = () => {
       await AsyncStorage.removeItem("accessToken");
 
       // Navigate to login screen
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "login" }], // replace "Login" with your actual login route name
-      });
+      router.push("/(auth)")
     } catch (error) {
       console.error("Logout failed", error);
     }
