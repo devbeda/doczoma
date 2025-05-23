@@ -1,10 +1,12 @@
 import express, { Router } from "express"
-import { createOrder, getTransactionsByUser, getUser, loginUser, logoutUser, registerUser, sendOtp, updateUser, verifyPaymentAndCreateTransaction } from "../controllers/user.controllers.js"
+import { createOrder, getTransactionsByUser, getUser, loginUser, logoutUser, registerUser, sendOtp, updateUser, verifyOtp, verifyPaymentAndCreateTransaction } from "../controllers/user.controllers.js"
 import { verifyJWT } from "../middlewares/auth.middleware.js"
 
 const router = Router()
 
 router.post("/sendotp", sendOtp)
+router.post("/verify-otp", verifyOtp);  
+
 router.post("/signup", registerUser)
 router.post("/login", loginUser)
 router.post("/logout",verifyJWT, logoutUser)

@@ -18,56 +18,64 @@ import { moderateScale } from "react-native-size-matters";
 import imagePaths from "@/src/constants/imagePaths";
 import customColors from "@/src/constants/customColours";
 import BtnComp from "@/src/components/atoms/BtnComp";
-import Otp from "@/src/components/molecules/Otp";
 import Signup from "@/src/components/molecules/Signup";
 import axios from "axios";
 import baseURL from "../../store/baseUrl";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 
 const Login = () => {
   const [visible, setVisible] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [inputValue, setInputValue] = useState("");
-  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
   const [isSignup, setIsSignup] = useState(false);
   const [phoneNo, setPhoneNo] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
 
   const topHeight = useRef(new Animated.Value(1)).current;
   const bottomTranslateY = useRef(new Animated.Value(100)).current;
-  const labelAnim = useRef(new Animated.Value(0)).current;
+  const phoneLabelAnim = useRef(new Animated.Value(0)).current;
+  const passwordLabelAnim = useRef(new Animated.Value(0)).current;
 
-  const handleContinue = async () => {
-    if (inputValue.length !== 10) {
-      alert("Please enter a valid 10-digit phone number");
+  const handleLogin = async () => {
+    if (phoneInput.length !== 10) {
+      Alert.alert("Error", "Please enter a valid 10-digit phone number");
       return;
     }
 
-    const formattedPhone = `+91${inputValue}`;
-    // setPhoneNo(formattedPhone);
+    if (!password) {
+      Alert.alert("Error", "Please enter your password");
+      return;
+    }
+
+    const formattedPhone = `+91${phoneInput}`;
 
     try {
       setLoading(true);
-      const res = await axios.post(`${baseURL}/user/sendotp`, {
+      const res = await axios.post(`${baseURL}/user/login`, {
         phoneNo: formattedPhone,
+        password,
       });
+      // console.log(res);
 
       if (res.status === 200) {
-        setPhoneNo(formattedPhone);
-        setIsOtpSent(true);
-        setLoading(false);
+        await AsyncStorage.setItem("accessToken", res.data.accessToken);
+        router.replace("/(main)");
       }
     } catch (error) {
-      setLoading(false);
-      console.error("Error sending OTP:", error);
+      console.error("Login failed:", error);
       Alert.alert(
         "Error",
-        error?.response?.data?.message || "Something went wrong"
+        error?.response?.data?.message || "Login failed. Please try again."
       );
+    } finally {
+      setLoading(false);
     }
   };
 
   const switchToSignup = () => {
-    setIsOtpSent(false);
     setIsSignup(true);
   };
 
@@ -90,19 +98,19 @@ const Login = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleFocus = () => {
+  const handlePhoneFocus = () => {
     setIsFocused(true);
-    Animated.timing(labelAnim, {
+    Animated.timing(phoneLabelAnim, {
       toValue: 1,
       duration: 200,
       useNativeDriver: false,
     }).start();
   };
 
-  const handleBlur = () => {
+  const handlePhoneBlur = () => {
     setIsFocused(false);
-    if (inputValue === "") {
-      Animated.timing(labelAnim, {
+    if (phoneInput === "") {
+      Animated.timing(phoneLabelAnim, {
         toValue: 0,
         duration: 200,
         useNativeDriver: false,
@@ -110,14 +118,50 @@ const Login = () => {
     }
   };
 
-  const labelStyle = {
+  const handlePasswordFocus = () => {
+    setPasswordFocused(true);
+    Animated.timing(passwordLabelAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const handlePasswordBlur = () => {
+    setPasswordFocused(false);
+    if (password === "") {
+      Animated.timing(passwordLabelAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
+
+  const phoneLabelStyle = {
     position: "absolute",
     left: 12,
-    top: labelAnim.interpolate({
+    top: phoneLabelAnim.interpolate({
       inputRange: [0, 1],
       outputRange: [12, -10],
     }),
-    fontSize: labelAnim.interpolate({
+    fontSize: phoneLabelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [16, 12],
+    }),
+    color: customColors.primary_black,
+    backgroundColor: customColors.primary_white,
+    paddingHorizontal: 4,
+  };
+
+  const passwordLabelStyle = {
+    position: "absolute",
+    left: 12,
+    top: passwordLabelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [12, -10],
+    }),
+    fontSize: passwordLabelAnim.interpolate({
       inputRange: [0, 1],
       outputRange: [16, 12],
     }),
@@ -153,31 +197,30 @@ const Login = () => {
               },
             ]}
           >
-            {visible && !isSignup && !isOtpSent && (
+            {visible && !isSignup && (
               <View style={styles.login_container}>
-                <View>
-                  <Text style={styles.title}>Login</Text>
-                </View>
+                <Text style={styles.title}>Login</Text>
+
                 <View style={styles.input_container}>
                   <View style={styles.input_box}>
-                    <Animated.Text style={labelStyle}>Phone</Animated.Text>
+                    <Animated.Text style={phoneLabelStyle}>Phone</Animated.Text>
                     <TextInput
                       keyboardType="numeric"
                       style={styles.text_input}
-                      onFocus={handleFocus}
-                      onBlur={handleBlur}
-                      value={inputValue}
+                      onFocus={handlePhoneFocus}
+                      onBlur={handlePhoneBlur}
+                      value={phoneInput}
                       maxLength={10}
                       onChangeText={(text) => {
-                        setInputValue(text);
+                        setPhoneInput(text);
                         if (text !== "" && !isFocused) {
-                          Animated.timing(labelAnim, {
+                          Animated.timing(phoneLabelAnim, {
                             toValue: 1,
                             duration: 200,
                             useNativeDriver: false,
                           }).start();
                         } else if (text === "" && !isFocused) {
-                          Animated.timing(labelAnim, {
+                          Animated.timing(phoneLabelAnim, {
                             toValue: 0,
                             duration: 200,
                             useNativeDriver: false,
@@ -186,36 +229,57 @@ const Login = () => {
                       }}
                     />
                   </View>
+
+                  <View style={styles.input_box}>
+                    <Animated.Text style={passwordLabelStyle}>
+                      Password
+                    </Animated.Text>
+                    <TextInput
+                      style={styles.text_input}
+                      secureTextEntry
+                      onFocus={handlePasswordFocus}
+                      onBlur={handlePasswordBlur}
+                      value={password}
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        if (text !== "" && !passwordFocused) {
+                          Animated.timing(passwordLabelAnim, {
+                            toValue: 1,
+                            duration: 200,
+                            useNativeDriver: false,
+                          }).start();
+                        } else if (text === "" && !passwordFocused) {
+                          Animated.timing(passwordLabelAnim, {
+                            toValue: 0,
+                            duration: 200,
+                            useNativeDriver: false,
+                          }).start();
+                        }
+                      }}
+                    />
+                  </View>
+
                   <View style={{ alignItems: "flex-end", width: "80%" }}>
                     <View style={styles.no_account}>
-                      <Text>Don’t </Text>
+                      <Text>Don't have an account? </Text>
                       <TouchableOpacity onPress={switchToSignup}>
-                        <Text style={styles.highlight_text}>
-                          have an account
-                        </Text>
+                        <Text style={styles.highlight_text}>Sign up</Text>
                       </TouchableOpacity>
-                      <Text>?</Text>
                     </View>
                   </View>
+
                   <BtnComp
                     loading={loading}
-                    title={"Continue"}
-                    customStyles={{ marginTop: 11 }}
-                    onPress={handleContinue}
+                    title={"Login"}
+                    customStyles={{ marginTop: 20 }}
+                    onPress={handleLogin}
                   />
                 </View>
+
                 <View
-                  style={{
-                    justifyContent: "flex-end",
-                    alignItems: "baseline",
-                    
-                  }}
+                  style={{ justifyContent: "flex-end", alignItems: "baseline" }}
                 >
-                  <Text style={{fontSize:10
-
-                    
-                  }}>Designed By</Text>
-
+                  <Text style={{ fontSize: 10 }}>Designed By</Text>
                   <Image
                     style={{ width: 100, marginLeft: 10 }}
                     height={20}
@@ -228,13 +292,7 @@ const Login = () => {
 
             {isSignup && (
               <View style={styles.login_container}>
-                <Signup />
-              </View>
-            )}
-
-            {isOtpSent && (
-              <View style={styles.login_container}>
-                <Otp phoneNo={phoneNo} flow="login" />
+                <Signup onBack={() => setIsSignup(false)} />
               </View>
             )}
           </Animated.View>
@@ -250,7 +308,6 @@ const styles = StyleSheet.create({
   main_container: {
     flex: 1,
     justifyContent: "flex-start",
-
     alignItems: "center",
     backgroundColor: customColors.primary_black,
   },
@@ -270,13 +327,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: moderateScale(30),
     gap: moderateScale(20),
-    // backgroundColor: "red"
   },
   input_container: {
     width: "100%",
     alignItems: "center",
     justifyContent: "flex-start",
-    gap: 10,
+    gap: 20,
   },
   input_box: {
     width: "80%",
@@ -297,7 +353,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: customColors.primary_black,
   },
-
   no_account: {
     fontSize: 14,
     flexDirection: "row",

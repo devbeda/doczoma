@@ -5,7 +5,6 @@ import cors from "cors";
 import authRoutes from "./src/routers/auth.router.js";
 import adminRoutes from "./src/routers/admin.routers.js"
 import fileRoutes from "./src/routers/file.router.js"
-import {connectRedis} from "./src/utils/redisClient.js";
 import cookieParser from "cookie-parser";
 
 dotenv.config();
@@ -39,7 +38,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const startServer = async () => {
   try {
-    await connectRedis();  // Ensure this runs before using Redis
+
     await DBConnect();
 
     app.use("/api/v1/user", authRoutes);

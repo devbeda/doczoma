@@ -15,6 +15,9 @@ const userSchema = new mongoose.Schema({
         type:String,
         unique:true,
     },
+    password:{
+        type: String
+    },
     rootFolders:[{
         type:mongoose.Schema.Types.ObjectId,
         ref: "Folder"

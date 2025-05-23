@@ -15,131 +15,144 @@ import BtnComp from "../atoms/BtnComp";
 import { moderateScale } from "react-native-size-matters";
 import baseURL from "@/src/store/baseUrl";
 import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage"; 
 
-const Otp = ({ phoneNo, flow }: any) => {
+type OtpProps = {
+  phoneNo: string;
+  flow?: "login" | "signup";
+};
+
+const Otp = ({ phoneNo, flow = "login" }: OtpProps) => {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
-  const inputs = useRef([]);
+  const [timer, setTimer] = useState(30);
+  const inputRefs = useRef<Array<TextInput | null>>([]);
   const router = useRouter();
-  const [resendTimer, setResendTimer] = useState(120);
 
-  const handleChange = (text, index) => {
-    if (text.length > 1) return;
-
-    const updatedOtp = [...otp];
-    updatedOtp[index] = text;
-    setOtp(updatedOtp);
-
-    if (text !== "" && index < inputs.current.length - 1) {
-      inputs.current[index + 1].focus();
-    }
-  };
-
-  const handleKeyPress = (e, index) => {
-    if (e.nativeEvent.key === "Backspace" && otp[index] === "" && index > 0) {
-      inputs.current[index - 1].focus();
-    }
-  };
-
-  const handleVerify = async () => {
-    const code = otp.join("");
-    if (code.length < 6) {
-      return Alert.alert("Invalid", "Enter complete 6-digit OTP");
-    }
-
-    try {
-      setLoading(true);
-      const url = `${baseURL}/user/${flow === "signup" ? "signup" : "login"}`;
-      const response = await axios.post(url, {
-        phoneNo,
-        otp: code,
-      });
-
-      if (response.status === 200 || response.status === 201) {
-        const accessToken = response.data.accessToken;
-        await AsyncStorage.setItem("accessToken", accessToken);
-        Alert.alert("Success", response.data.message);
-        router.replace("/(main)");
-      }
-      setLoading(false);
-    } catch (err) {
-      setLoading(false);
-      console.error("OTP verification failed", err);
-      Alert.alert(
-        "Error",
-        err?.response?.data?.message || "Something went wrong"
-      );
-    }
-  };
-
-  const handleResendOtp = async () => {
-    try {
-      setResendTimer(120); // reset timer
-      const url = `${baseURL}/user/send-otp`;
-      const response = await axios.post(url, {
-        phoneNo,
-      });
-      if (response.status === 200 || response.status === 201) {
-        Alert.alert("OTP Sent", "A new OTP has been sent to your number.");
-      }
-    } catch (err) {
-      console.error("Resend OTP failed", err);
-      Alert.alert("Error", "Failed to resend OTP. Try again later.");
-    }
-  };
-
+  // Countdown timer for resend OTP
   useEffect(() => {
-    if (resendTimer === 0) return;
+    if (timer === 0) return;
 
-    const interval = setInterval(() => {
-      setResendTimer((prev) => prev - 1);
+    const countdown = setInterval(() => {
+      setTimer((prev) => prev - 1);
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [resendTimer]);
+    return () => clearInterval(countdown);
+  }, [timer]);
+
+  const handleChange = (text: string, index: number) => {
+    if (/^\d?$/.test(text)) {
+      const newOtp = [...otp];
+      newOtp[index] = text;
+      setOtp(newOtp);
+
+      // Move focus to next input if a digit entered
+      if (text !== "" && index < 5) {
+        inputRefs.current[index + 1]?.focus();
+      }
+      // Move back focus if empty and not the first input
+      if (text === "" && index > 0) {
+        inputRefs.current[index - 1]?.focus();
+      }
+    }
+  };
+
+  const resendOtp = async () => {
+    if (timer > 0) return;
+    try {
+      setLoading(true);
+      const res = await axios.post(`${baseURL}/user/sendotp`, {
+        phoneNo,
+      });
+      if (res.status === 200) {
+        setTimer(30);
+      }
+    } catch (error) {
+      console.error("Error resending OTP:", error);
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "Could not resend OTP"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+const submitOtp = async () => {
+  const otpStr = otp.join("");
+  if (otpStr.length < 4) {
+    Alert.alert("Invalid OTP", "Please enter the complete 4-digit OTP");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    const res = await axios.post(`${baseURL}/user/verify-signup-otp`, {
+      phoneNo: `+91${phoneNo}`,
+      otp: otpStr,
+      name,
+    });
+
+    const { accessToken } = res.data;
+
+    if (res.status === 200 && accessToken) {
+      await AsyncStorage.setItem("accessToken", accessToken);
+      Alert.alert("Success", "Signup successful!");
+      router.push("/(tabs)/dashboard");
+    } else {
+      Alert.alert("Error", "Access token missing in response");
+    }
+  } catch (error) {
+    console.error("Signup verification failed:", error);
+    Alert.alert(
+      "Verification Failed",
+      error?.response?.data?.message || "Invalid OTP"
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1, width: "100%" }}
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={styles.container}>
-        <View style={styles.input_containers}>
-          <Text style={styles.title}>OTP Verification</Text>
-          <View style={styles.box_containers}>
-            {otp.map((digit, index) => (
-              <TextInput
-                key={index}
-                ref={(ref) => (inputs.current[index] = ref)}
-                keyboardType="numeric"
-                maxLength={1}
-                style={styles.input_box}
-                value={digit}
-                onChangeText={(text) => handleChange(text, index)}
-                onKeyPress={(e) => handleKeyPress(e, index)}
-              />
-            ))}
-          </View>
-        </View>
+      <Text style={styles.title}>Enter OTP</Text>
+      <Text style={styles.subtitle}>
+        Enter the 4-digit OTP sent to {phoneNo}
+      </Text>
 
-        <View style={styles.text_container}>
-          <View style={styles.no_account}>
-            {resendTimer > 0 ? (
-              <Text style={{ color: "gray" }}>
-                Resend OTP in {Math.floor(resendTimer / 60)}:
-                {(resendTimer % 60).toString().padStart(2, "0")}
-              </Text>
-            ) : (
-              <TouchableOpacity onPress={handleResendOtp}>
-                <Text style={styles.highlight_text}>Resend OTP</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        <BtnComp loading={loading} title={"Verify"} onPress={handleVerify} />
+      <View style={styles.otp_container}>
+        {otp.map((digit, idx) => (
+          <TextInput
+            key={idx}
+            ref={(ref) => (inputRefs.current[idx] = ref)}
+            style={styles.otp_input}
+            maxLength={1}
+            keyboardType="number-pad"
+            value={digit}
+            onChangeText={(text) => handleChange(text, idx)}
+            autoFocus={idx === 0}
+            textAlign="center"
+          />
+        ))}
       </View>
+
+      <TouchableOpacity
+        disabled={timer !== 0 || loading}
+        onPress={resendOtp}
+        style={[
+          styles.resend_button,
+          { opacity: timer === 0 && !loading ? 1 : 0.5 },
+        ]}
+      >
+        <Text style={styles.resend_text}>
+          {timer === 0 ? "Resend OTP" : `Resend OTP in ${timer}s`}
+        </Text>
+      </TouchableOpacity>
+
+      <BtnComp title="Submit" loading={loading} onPress={submitOtp} />
     </KeyboardAvoidingView>
   );
 };
@@ -148,47 +161,40 @@ export default Otp;
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    padding: moderateScale(20),
     justifyContent: "center",
     alignItems: "center",
-    width: "100%",
-  },
-  input_containers: {
-    gap: 7,
-    height: 90,
   },
   title: {
-    fontSize: 24,
+    fontSize: moderateScale(24),
     fontWeight: "bold",
-    color: customColors.primary_black,
+    marginBottom: moderateScale(10),
+  },
+  subtitle: {
+    fontSize: moderateScale(14),
+    marginBottom: moderateScale(20),
     textAlign: "center",
   },
-  box_containers: {
+  otp_container: {
     flexDirection: "row",
-    gap: 10,
+    justifyContent: "space-between",
+    width: "80%",
+    marginBottom: moderateScale(20),
   },
-  input_box: {
-    width: 45,
-    height: 45,
-    borderColor: customColors.primary_black,
+  otp_input: {
     borderWidth: 1,
-    borderRadius: 10,
-    fontSize: 20,
-    textAlign: "center",
+    borderColor: customColors.primary_black,
+    borderRadius: 8,
+    width: moderateScale(50),
+    height: moderateScale(50),
+    fontSize: moderateScale(24),
   },
-  text_container: {
-    width: "70%",
-    height: 20,
-    justifyContent: "center",
-    alignItems: "flex-end",
-    marginBottom: 4,
+  resend_button: {
+    marginBottom: moderateScale(20),
   },
-  no_account: {
-    fontSize: 14,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  highlight_text: {
-    fontWeight: "bold",
+  resend_text: {
     color: customColors.primary_orange,
+    fontWeight: "bold",
   },
 });

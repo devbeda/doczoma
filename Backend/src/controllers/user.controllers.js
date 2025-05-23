@@ -1,9 +1,11 @@
 import { User } from "../models/user.model.js";
 import { sendOtpSMS } from "../utils/twillio.js";
-import {redisClient} from "../utils/redisClient.js";
+import { redisClient } from "../utils/redisClient.js";
 import { Plan } from "../models/plan.model.js";
-import Razorpay from 'razorpay';
+import Razorpay from "razorpay";
 import { Transaction } from "../models/transaction.model.js";
+import Otp from "../models/otp.model.js";
+import bcrypt from "bcryptjs";
 
 const generateAccessToken = async (userId) => {
   try {
@@ -18,114 +20,123 @@ const generateAccessToken = async (userId) => {
   }
 };
 
+// import { sendOtpSMS } from "../utils/sendOtp.js"; // your SMS function
+
 export const sendOtp = async (req, res) => {
-  const { phoneNo } = req.body;
-  if (!phoneNo) {
-    return res.status(400).json({ message: "Phone number is required" });
-  }
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  console.log(otp);
-  
   try {
-    await redisClient.set(phoneNo, otp, {EX: 300});
-
-    await sendOtpSMS(phoneNo, otp);
-
-    return res.status(200).json({ message: "OTP sent Successfully" });
+    const { phoneNo } = req.body;
+    if (!phoneNo) {
+      return res.status(400).json({ message: "Phone number is required" });
+    }
+  
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+  
+    try {
+      await Otp.findOneAndUpdate(
+        { phoneNo },
+        { otp, expiresAt },
+        { upsert: true, new: true }
+      );
+  
+      await sendOtpSMS(phoneNo, otp);
+  
+      return res.status(200).json({ message: "OTP sent successfully" });
+    } catch (error) {
+      console.error("Error sending OTP:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
   } catch (error) {
-    console.error("Error sending OTP:", error);
+    console.error("Error sending OTP", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const verifyOtp = async (req, res) => {
+  try {
+    const { phoneNo, otp } = req.body;
+  
+    if (!phoneNo || !otp) {
+      return res.status(400).json({ message: "Phone number and OTP are required" });
+    }
+  
+    const otpEntry = await Otp.findOne({ phoneNo });
+    if (!otpEntry || otpEntry.otp !== otp || otpEntry.expiresAt < new Date()) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+  
+    await Otp.deleteOne({ phoneNo }); // Optional, delete OTP after verification
+  
+    return res.status(200).json({ message: "OTP verified successfully" });
+  } catch (error) {
+    console.error("Error verifying otp", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const registerUser = async (req, res) => {
   try {
-    const { phoneNo, otp } = req.body;
-    if (!phoneNo || !otp) {
-      return res
-        .status(400)
-        .json({ message: "Phone number and OTP are required" });
+    const { phoneNo, password, fullName, email } = req.body;
+  
+    if (!phoneNo || !password) {
+      return res.status(400).json({ message: "Phone number and password are required" });
     }
-
+  
     const existingUser = await User.findOne({ phoneNo });
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
-
-    const storedOtp = await redisClient.get(phoneNo);
-
-    if (storedOtp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-
+  
+    const hashedPassword = await bcrypt.hash(password, 10);
     const freePlan = await Plan.findOne({ planName: "Free" });
-
-     if (!freePlan) {
-      return res.status(500).json({ message: "Free plan is not available in the system." });
-    }
-
     const now = new Date();
-    const expiry = new Date();
-    expiry.setDate(expiry.getDate() + freePlan.planDuration);
-
+    const expiry = new Date(now.getTime() + freePlan.planDuration * 24 * 60 * 60 * 1000);
+  
     const newUser = new User({
+      fullName,
       phoneNo,
+      email,
+      password: hashedPassword,
       choosedPlan: freePlan._id,
       planStarting: now,
       planExpiry: expiry,
     });
+  
     await newUser.save();
     const accessToken = await generateAccessToken(newUser._id);
-    await redisClient.del(phoneNo);
-
-    const options = {
-      httpOnly: true,
-      secure: true,
-    };
-
-    return res
-      .status(201)
-      .cookie("accessToken", accessToken, options)
-      .json({ message: "User registered successfully", newUser , accessToken });
+  
+    return res.status(201)
+      .cookie("accessToken", accessToken, { httpOnly: true, secure: true })
+      .json({ message: "User registered successfully", accessToken });
   } catch (error) {
-    console.error("Error registering user:", error);
+    console.error("Error logging out user:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const loginUser = async (req, res) => {
   try {
-    const { phoneNo, otp } = req.body;
-    if (!phoneNo || !otp) {
-      return res
-        .status(400)
-        .json({ message: "Phone number and OTP are required" });
-    }
+    const { phoneNo, password } = req.body;
 
-    const user = await User.findOne({ phoneNo });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+  if (!phoneNo || !password) {
+    return res.status(400).json({ message: "Phone number and password are required" });
+  }
 
-    const storedOtp = await redisClient.get(phoneNo);
+  const user = await User.findOne({ phoneNo });
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
 
-    if (storedOtp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) {
+    return res.status(401).json({ message: "Invalid password" });
+  }
 
-    const accessToken = await generateAccessToken(user._id);
-    await redisClient.del(phoneNo);
+  const accessToken = await generateAccessToken(user._id);
 
-    const options = {
-      httpOnly: true,
-      secure: true,
-    };
-
-    return res
-      .status(200)
-      .cookie("accessToken", accessToken, options)
-      .json({ message: "User logged in successfully", accessToken });
+  return res.status(200)
+    .cookie("accessToken", accessToken, { httpOnly: true, secure: true })
+    .json({ message: "Login successful", user,accessToken });
   } catch (error) {
     console.error("Error logging in user:", error);
     return res.status(500).json({ message: "Internal server error" });
@@ -134,13 +145,12 @@ export const loginUser = async (req, res) => {
 
 export const logoutUser = async (req, res) => {
   try {
-    const userId = req.user._id
-    const userPhoneNo = req.user.phoneNo
+    const userId = req.user._id;
+
     if (!userId) {
       return res.status(400).json({ message: "UnAuthotized " });
     }
 
-    await redisClient.del(userPhoneNo);
 
     const options = {
       httpOnly: true,
@@ -162,9 +172,9 @@ export const getUser = async (req, res) => {
   try {
     const userId = req.user._id;
     const user = await User.findById(userId)
-    .populate({path:"rootFolders"})
-    .populate("rootFiels")
-    .populate("choosedPlan");
+      .populate({ path: "rootFolders" })
+      .populate("rootFiels")
+      .populate("choosedPlan");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -197,7 +207,7 @@ export const updateUser = async (req, res) => {
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_SECRET,
-})
+});
 
 export const createOrder = async (req, res) => {
   try {
@@ -227,15 +237,11 @@ export const createOrder = async (req, res) => {
   }
 };
 
-
 // ✅ Create a transaction after successful payment verification
 export const verifyPaymentAndCreateTransaction = async (req, res) => {
   try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-    } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+      req.body;
 
     // Generate signature to verify
     const expectedSignature = crypto
@@ -244,7 +250,9 @@ export const verifyPaymentAndCreateTransaction = async (req, res) => {
       .digest("hex");
 
     if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ success: false, message: "Invalid signature" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid signature" });
     }
 
     // Update the existing transaction by order ID
@@ -259,10 +267,14 @@ export const verifyPaymentAndCreateTransaction = async (req, res) => {
     );
 
     if (!transaction) {
-      return res.status(404).json({ success: false, message: "Transaction not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Transaction not found" });
     }
 
-    res.status(200).json({ success: true, message: "Payment verified", transaction });
+    res
+      .status(200)
+      .json({ success: true, message: "Payment verified", transaction });
   } catch (error) {
     console.error("Error verifying payment:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -284,4 +296,3 @@ export const getTransactionsByUser = async (req, res) => {
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
-
