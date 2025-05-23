@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import cloudinary from "../utils/cloudinary.js";
 import bytes from "bytes";
-import Transaction from "../models/Transaction.js";
+
 import crypto from "crypto";
 import { uploadToS3 } from "../middlewares/multer.middleware.js";
 

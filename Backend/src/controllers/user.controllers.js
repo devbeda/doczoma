@@ -3,6 +3,7 @@ import { sendOtpSMS } from "../utils/twillio.js";
 import {redisClient} from "../utils/redisClient.js";
 import { Plan } from "../models/plan.model.js";
 import Razorpay from 'razorpay';
+import { Transaction } from "../models/transaction.model.js";
 
 const generateAccessToken = async (userId) => {
   try {
